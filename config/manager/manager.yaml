@@ -34,6 +34,7 @@ spec:
       containers:
       - command:
         - /manager
+        - /webhook
         image: $(codeflare_operator_controller_image)
         imagePullPolicy: Always
         name: manager
