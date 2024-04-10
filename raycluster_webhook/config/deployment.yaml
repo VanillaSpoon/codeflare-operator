@@ -23,7 +23,7 @@ spec:
         runAsUser: 1234
       containers:
         - name: server
-          image: quay.io/rh_ee_egallina/altwebhook:v63
+          image: quay.io/rh_ee_egallina/altwebhook:v83
           imagePullPolicy: Always
           ports:
             - containerPort: 8443
@@ -32,10 +32,78 @@ spec:
               name: metrics
           volumeMounts:
             - name: webhook-tls-certs
-              mountPath: /etc/webhook/certs/
+              mountPath: /etc/webhook/certs
               readOnly: true
       volumes:
         - name: webhook-tls-certs
           secret:
-            secretName: sidecar-injector-certs
+            secretName: raycluster-webhook-cert
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: raycluster-mutating-webhook
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: raycluster-mutating-webhook
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]
+  - apiGroups: ["ray.io"]
+    resources: ["rayclusters"]
+    verbs: ["get", "watch", "list", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: raycluster-mutating-webhook
+subjects:
+  - kind: ServiceAccount
+    name: raycluster-mutating-webhook
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: raycluster-mutating-webhook
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: raycluster-mutating-webhook
+  namespace: default
+spec:
+  selector:
+    app: raycluster-mutating-webhook
+  ports:
+    - port: 443
+      targetPort: tls
+      name: application
+    - port: 80
+      targetPort: metrics
+      name: metrics
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: raycluster-mutating-webhook
+webhooks:
+  - name: raycluster-mutating-webhook.codeflare.com
+    admissionReviewVersions: ["v1beta1"]
+    sideEffects: None
+    timeoutSeconds: 30
+    failurePolicy: Ignore
+    clientConfig:
+      service:
+        name: raycluster-mutating-webhook
+        namespace: default
+        path: "/mutate"
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: ["ray.io"]
+        apiVersions: ["v1"]
+        resources: ["rayclusters"]
 

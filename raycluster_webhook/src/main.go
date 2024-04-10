@@ -16,9 +16,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"sigs.k8s.io/yaml"
-
 	rayv1api "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
 	"strconv"
+	"crypto/tls"
+	"crypto/x509"
 )
 
 // ServerParameters : we need to enable a TLS endpoint
@@ -51,18 +52,57 @@ var (
 
 
 func main() {
-	flag.IntVar(&serverParameters.port, "port", 8443, "Webhook server port.")
-	flag.StringVar(&serverParameters.certFile, "tlsCertFile", "/etc/webhook/certs/tls.crt", "File containing the x509 Certificate for HTTPS.")
-	flag.StringVar(&serverParameters.keyFile, "tlsKeyFile", "/etc/webhook/certs/tls.key", "File containing the x509 private key to --tlsCertFile.")
-	flag.Parse()
+    // Parse command line flags to get the paths to TLS certificate and private key
+    var serverParameters struct {
+        port     int
+        certFile string
+        keyFile  string
+    }
+    flag.IntVar(&serverParameters.port, "port", 8443, "Webhook server port.")
+    flag.StringVar(&serverParameters.certFile, "tlsCertFile", "/etc/webhook/certs/tls.crt", "File containing the x509 Certificate for HTTPS.")
+    flag.StringVar(&serverParameters.keyFile, "tlsKeyFile", "/etc/webhook/certs/tls.key", "File containing the x509 private key to --tlsCertFile.")
+    flag.Parse()
 
-	// Creating Client Set.
-	k8sClientSet = createClientSet()
+    // Load CA certificate
+    caCert, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
+    if err != nil {
+        fmt.Println("Failed to load CA certificate:", err)
+        return
+    }
 
-	// test if client set is working
-	http.HandleFunc("/", HandleRoot)
-	http.HandleFunc("/mutate", HandleMutate)
-	fmt.Print(http.ListenAndServeTLS(":" + strconv.Itoa(serverParameters.port), serverParameters.certFile, serverParameters.keyFile, nil))
+    caCertPool := x509.NewCertPool()
+    caCertPool.AppendCertsFromPEM(caCert)
+
+    // Load server's certificate and key
+    cert, err := tls.LoadX509KeyPair(serverParameters.certFile, serverParameters.keyFile)
+    if err != nil {
+        fmt.Println("Failed to load server certificate and key:", err)
+        return
+    }
+
+    // Create a TLS config that uses the server's cert/key and also trusts the CA
+    tlsConfig := &tls.Config{
+        Certificates: []tls.Certificate{cert},
+        ClientCAs:    caCertPool,
+        ClientAuth:   tls.RequireAndVerifyClientCert,
+    }
+    tlsConfig.BuildNameToCertificate()
+
+    // Configure HTTPS server
+    server := &http.Server{
+        Addr:      ":" + strconv.Itoa(serverParameters.port),
+        TLSConfig: tlsConfig,
+    }
+
+    http.HandleFunc("/", HandleRoot)
+    http.HandleFunc("/mutate", HandleMutate)
+
+    // Start HTTPS server with TLS config
+    fmt.Println("Starting server on port", serverParameters.port)
+    err = server.ListenAndServeTLS("", "") // Certificates are already loaded in the TLSConfig
+    if err != nil {
+        fmt.Println("Failed to start server:", err)
+    }
 }
 
 func HandleRoot(w http.ResponseWriter, r *http.Request){
