@@ -1,0 +1,22 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: raycluster-mutating-webhook
+  annotations:
+    cert-manager.io/inject-ca-from: default/sidecar-injector-certs
+webhooks:
+  - name: raycluster-mutating-webhook.codeflare.com
+    admissionReviewVersions: [ "v1beta1" ]
+    sideEffects: None
+    timeoutSeconds: 30
+    failurePolicy: Ignore
+    clientConfig:
+      service:
+        name: raycluster-mutating-webhook
+        namespace: default
+        path: "/mutate"
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [ "ray.io" ]
+        apiVersions: ["v1"]
+        resources: ["rayclusters"]
