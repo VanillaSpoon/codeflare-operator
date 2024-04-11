@@ -1,9 +1,10 @@
 package main
 
 import (
+	"fmt"
+
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
-	"fmt"
 )
 
 func createClientSet() *kubernetes.Clientset{

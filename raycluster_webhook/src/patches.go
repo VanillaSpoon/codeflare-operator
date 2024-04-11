@@ -1,8 +1,9 @@
 package main
 
-import ( 
-    rayv1api "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
-    "fmt"
+import (
+	"fmt"
+
+	rayv1api "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
